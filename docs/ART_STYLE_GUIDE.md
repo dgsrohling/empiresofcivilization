@@ -80,6 +80,7 @@ Grama, floresta (chão sob as árvores), terra, areia, rochas, montanha, água, 
 | Depósito de Madeira (`building_lumberCamp_<jogador>`) | 2×2 tiles | 136 × 115 | (68, 79) |
 | Depósito de Mineração (`building_miningCamp_<jogador>`) | 2×2 tiles | 136 × 115 | (68, 79) |
 | Quartel (`building_barracks_<jogador>`) | 3×3 tiles | 200 × 180 | (100, 128) |
+| Campo de Arqueiros (`building_archeryRange_<jogador>`) | 3×3 tiles | 200 × 150 | (100, 98) |
 
 Regra geral: a base do edifício preenche o losango da área ocupada, com largura (L + A)·32 px e altura (L + A)·16 px para uma área de L×A tiles. A imagem tem essa largura + 8 px, e o ponto de apoio fica no centro do losango, 4 px acima da borda inferior da base.
 
@@ -87,12 +88,20 @@ Regra geral: a base do edifício preenche o losango da área ocupada, com largur
 - **Depósito de madeira:** galpão de tábuas com pilha de toras visível.
 - **Depósito de mineração:** construção de pedra com carrinho de minério (ouro e pedra).
 - **Quartel:** base de pedra, andar de madeira, escudos e lanças.
+- **Campo de Arqueiros:** terreno cercado com alvos de treino e um galpão.
+
+### Efeitos
+
+| Asset | Nome no jogo | Tamanho |
+| --- | --- | --- |
+| Flecha (apontando para a direita) | `projectile_arrow` | 14 × 4 |
+| Escombros (2×2, 3×3, 4×4 tiles) | `rubble_2`, `rubble_3`, `rubble_4` | (n·64 + 8) × (n·32 + 20) |
 
 Para obras em andamento, o jogo recorta a imagem do edifício de baixo para cima; não é necessário fornecer etapas de construção separadas (opcional no futuro).
 
 ### Unidades (provisório)
 
-Aldeão (26 × 38, apoio nos pés em (13, 35)) e batedor (48 × 44, apoio em (24, 41)). **Ainda não produza as versões definitivas:** elas precisarão de 8 direções e várias animações, especificadas depois da Fase 4. Para unidades, o caminho recomendado é modelo 3D + renderização com câmera isométrica fixa (ver a seção 5).
+Aldeão (26 × 38, apoio nos pés em (13, 35)), batedor (48 × 44, apoio em (24, 41)) e soldados — espadachim, lanceiro, arqueiro (30 × 40, apoio em (15, 37)). **Ainda não produza as versões definitivas:** elas precisarão de 8 direções e várias animações, especificadas depois da Fase 4. Para unidades, o caminho recomendado é modelo 3D + renderização com câmera isométrica fixa (ver a seção 5).
 
 ---
 

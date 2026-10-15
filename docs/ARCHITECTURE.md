@@ -26,6 +26,8 @@ A regra principal: **`@eoc/simulation` não importa nada de DOM, React ou Phaser
 | `economy/` | Ciclo de coleta/depósito dos aldeões (`EconomySystem`) e consultas (fonte mais próxima, depósito mais próximo, ponto de aproximação) |
 | `construction/` | Validação de posicionamento (`checkPlacement`, compartilhada com a prévia do cliente) e obras (`ConstructionSystem`) |
 | `orders/` | Comportamentos comuns a várias ordens (aproximar-se de um alvo, alcance de interação) |
+| `combat/` | Regras de dano (`damage.ts`) e `CombatSystem` (perseguição, ataques, projéteis, busca de alvos, posturas, mortes) |
+| `training/` | `TrainingSystem` (filas, população, nascimento e ponto de reunião) |
 | `commands/` | Validação de comandos (propriedade, existência, limites) |
 
 ## Ciclo de simulação
@@ -36,11 +38,13 @@ A regra principal: **`@eoc/simulation` não importa nada de DOM, React ou Phaser
   1. salva `prevX/prevY` de cada unidade (para interpolação);
   2. aplica os comandos enfileirados (revalidados);
   3. processa até *N* pedidos de caminho (orçamento por tick);
-  4. move unidades e resolve sobreposição;
-  5. atualiza a economia (coleta, depósito, troca de alvo);
-  6. atualiza as obras (construtores e progresso);
-  7. unidades sem tarefa que terminaram o deslocamento ficam ociosas;
-  8. avança `tick` e `time`.
+  4. avança as filas de treinamento (novas unidades nascem aqui);
+  5. move unidades e resolve sobreposição;
+  6. atualiza a economia (coleta, depósito, troca de alvo);
+  7. atualiza obras e reparos;
+  8. combate: ataques, projéteis, busca automática de alvos e, no fim, as mortes do tick;
+  9. unidades sem tarefa que terminaram o deslocamento ficam ociosas;
+  10. avança `tick` e `time`.
 - A renderização interpola entre `prev` e posição atual com `alpha = acumulador / TICK_MS`, então o movimento é suave a 30, 60 ou 144 FPS.
 
 ## Fluxo de comandos
@@ -57,7 +61,8 @@ O cliente nunca altera entidades diretamente. O mesmo `validateCommand` será ex
 
 - O `MovementSystem` só desloca: recebe um destino, publica `moveStatus` (`moving`, `arrived`, `failed`) e nunca decide o que a unidade faz depois.
 - Quem dá ordens (comandos, `EconomySystem`, futuramente combate e construção) lê esse status. Uma unidade tem no máximo uma `task` (hoje: `GatherTask`).
-- `unit.state` (`idle`, `moving`, `gathering`, `building`) é a atividade visível usada por HUD e animações.
+- `unit.state` (`idle`, `moving`, `gathering`, `building`, `attacking`) é a atividade visível usada por HUD e animações.
+- Tarefas: `GatherTask`, `BuildTask`, `RepairTask` e `AttackTask`.
 - `unit.buildQueue` guarda obras enfileiradas (Shift); qualquer outra ordem a esvazia.
 
 ## Economia
@@ -79,9 +84,25 @@ Ciclo da `GatherTask`: `toResource` → `gathering` → `toDropsite` → (volta 
 - **Conclusão:** o limite populacional aumenta, e o depósito passa a aceitar recursos (obras não concluídas nunca recebem). Cada construtor segue para a próxima obra da fila; quem conclui um depósito especializado começa a coletar o recurso correspondente mais próximo.
 - **Cancelamento:** devolve `floor(custo × (1 − progresso))` e libera a área.
 
+## Treinamento
+
+- O custo é cobrado ao enfileirar (máximo de 10 itens) e devolvido integralmente ao cancelar.
+- O item da frente só começa se houver população disponível (limite = casas + Centros da Vila, no máximo 200); caso contrário a fila para e um evento `trainingBlocked` é emitido uma vez.
+- A unidade nasce no tile livre ao redor do edifício mais próximo do ponto de reunião. Se o ponto de reunião for um recurso, aldeões começam a coletá-lo; senão, a unidade caminha até lá.
+
+## Combate
+
+- **Dano:** `max(1, ataque − armadura do tipo + bônus contra a categoria do alvo)`. Corpo a corpo usa a armadura `melee`; flechas usam `pierce`. Edifícios têm a categoria `building`.
+- **Alcance:** medido entre as bordas (raio das unidades, retângulo dos edifícios). Corpo a corpo tem alcance efetivo de 0,2 tile.
+- **Corpo a corpo** aplica o dano na hora. **À distância** cria um `Projectile` em `world.projectiles`, que persegue o alvo e aplica o dano calculado no disparo ao chegar (se o alvo morrer antes, a flecha se perde).
+- **Busca automática:** unidades militares sem tarefa procuram, a cada 0,5 s, o inimigo mais próximo no campo de visão (em "manter posição", só no alcance), priorizando quem as atacou e unidades sobre edifícios. Unidades em movimento comum ignoram inimigos; em ataque-mover, não.
+- **Posturas:** agressiva (persegue até 14 tiles do ponto de guarda), defensiva (até 5 tiles e volta ao ponto de guarda), manter posição (não se move). Ordens explícitas de ataque perseguem sem limite.
+- **Mortes:** acumuladas durante o tick e processadas no fim (`entityDied` + `World.removeEntity`), para não alterar listas durante as iterações. Edifícios destruídos liberam a área e reduzem o limite populacional.
+- **Inimigos:** `areEnemies(a, b)` — jogadores diferentes são inimigos, a natureza é neutra. Times virão com o multiplayer.
+
 ## Eventos da simulação
 
-A simulação acumula `SimEvent`s (`entityRemoved`, `resourceTouched`, `deposited`, `noDropsite`, `buildingPlaced`, `buildingCompleted`, `buildingCancelled`); o cliente os consome com `sim.drainEvents()` a cada quadro para remover sprites, trocar a árvore pela textura cortada, mostrar "+10" e avisos. O mesmo canal servirá para áudio e para o envio de deltas na rede.
+A simulação acumula `SimEvent`s (`entityRemoved`, `resourceTouched`, `deposited`, `noDropsite`, `buildingPlaced`, `buildingCompleted`, `buildingCancelled`, `entityDied`, `attacked`, `meleeHit`, `projectileFired`, `projectileHit`, `unitTrained`, `trainingBlocked`, `repairStopped`); o cliente os consome com `sim.drainEvents()` a cada quadro para remover sprites, trocar a árvore pela textura cortada, mostrar "+10" e avisos. O mesmo canal servirá para áudio e para o envio de deltas na rede.
 
 ## Pathfinding
 
@@ -103,6 +124,7 @@ A simulação acumula `SimEvent`s (`entityRemoved`, `resourceTouched`, `deposite
 - **Texturas:** geradas proceduralmente em canvas (`proceduralTextures.ts`, primitivas em `art/primitives.ts`, edifícios em `art/buildings.ts`) com chaves estáveis (`textureKeys.ts`). As dimensões de cada edifício derivam da área ocupada (`buildingArt`). Para trocar pela arte definitiva, carregue imagens com as mesmas chaves e pontos de apoio (ver `docs/ART_STYLE_GUIDE.md`).
 - **Obras:** o sprite do edifício é recortado de baixo para cima conforme o progresso, sobre uma fundação desenhada no chão, com barra de progresso.
 - **Posicionamento:** `PlacementController` mostra o edifício semitransparente preso à grade e pinta cada tile da área de verde ou vermelho.
+- **Efeitos de combate:** `EffectsRenderer` desenha flechas (interpoladas, em arco), impactos, corpos que tombam e escombros, a partir dos projéteis e eventos da simulação.
 
 ## Interface (React)
 

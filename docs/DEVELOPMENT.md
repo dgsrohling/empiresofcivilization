@@ -7,8 +7,8 @@
 | 1 — Protótipo visual | ✅ Concluída |
 | 2 — Sistema econômico | ✅ Concluída |
 | 3 — Construções | ✅ Concluída |
-| 4 — Produção militar e combate | ⏳ Próxima |
-| 5 — IA | Pendente |
+| 4 — Produção militar e combate | ✅ Concluída |
+| 5 — IA | ⏳ Próxima |
 | 6 — Expansão (eras, tecnologias, civilizações) | Pendente |
 | 7 — Multiplayer | Pendente |
 | 8 — Polimento e implantação | Pendente |
@@ -48,10 +48,21 @@
 - Interface: menu de construção (B) com ícones, custos, atalhos e motivo de indisponibilidade; prévia semitransparente com tiles verdes/vermelhos; aviso do modo de posicionamento; obra que "sobe" com barra de progresso; status "Construindo Casa (+1 na fila)"; cancelar obra (Delete/botão); clique direito em obra para ajudar; avisos de obra concluída/cancelada.
 - Guia de estilo de arte: `docs/ART_STYLE_GUIDE.md`.
 
+## Fase 4 — o que está implementado
+
+- Unidades: espadachim, lanceiro, arqueiro (além de aldeão e batedor), com dados de combate configuráveis (dano, tipo de dano, bônus por categoria, alcance, recarga, projétil, busca automática).
+- Edifício novo: Campo de Arqueiros (requer Quartel). Centro da Vila treina aldeões; Quartel, espadachins e lanceiros.
+- `TrainingSystem`: filas com custo antecipado, limite de 10, bloqueio por população com aviso, cancelamento com devolução integral, nascimento ao lado do edifício e ponto de reunião (inclusive em recurso).
+- `CombatSystem`: perseguição com recálculo periódico de rota, corpo a corpo, flechas como projéteis teleguiados, armadura e bônus, busca automática de alvos, posturas (agressiva, defensiva, manter posição), ataque-mover, revide, mortes processadas no fim do tick, destruição de edifícios (libera a área e reduz a população máxima), estatísticas (abates, perdas).
+- Reparo de edifícios com custo proporcional e parada por falta de recursos.
+- Interface: botões de treinamento com custo, tempo e motivo de indisponibilidade; fila com progresso e cancelamento; clique direito para atacar, reparar e definir ponto de reunião; atacar-mover (A); manter posição (H) e botões de postura; barras de vida para quem sofreu dano; alerta "Você está sendo atacado!" com marca no minimapa; avisos de edifício destruído e de população máxima.
+- Arte e efeitos: soldados, flechas em arco, faíscas de impacto, corpos que tombam, escombros com poeira, Campo de Arqueiros.
+- **Modo de teste:** opção na nova partida que permite controlar os dois jogadores (F9), para testar combate antes da IA.
+
 ## Testes
 
-- **Unitários (Vitest, 80):** RNG, A*, NavGrid/componentes, suavização, PathService (fila, cache, inalcançável), geração/validação de mapas em vários tamanhos e seeds, criação de partida, validação de comandos, movimento sem atravessar obstáculos, separação, determinismo, formação, projeção isométrica, seleção, formatação. **Economia:** ciclo completo com conservação verificada a cada tick, capacidade, depósito mais próximo, esgotamento e troca de alvo, ausência de depósito, troca de tipo de recurso, comando de depósito, árvore cercada, vários aldeões na mesma fonte, modificadores, cancelamento por movimento, validação, integração em mapa procedural (os 4 recursos aumentam em 3 min) e determinismo com coleta; ritmo de coleta do HUD. **Construção:** validação de posição (limites, água, sobreposição, recursos, unidades inimigas e próprias, era), validação do comando, custo e fundação, tempo com 1 construtor, aceleração com vários, ajuda em obra, cancelamento com devolução, proibições de cancelamento, depósito só ativo após conclusão, construtor de depósito passa a minerar, fila com Shift, ordem que limpa a fila, afastamento de unidades e recálculo de rotas, e integração em mapa procedural (casa + quartel).
-- **E2E (Playwright, 4):** seleciona um aldeão com o mouse, move com clique direito e verifica que ele nunca pisa em tile bloqueado e chega ao destino; seleção por arrasto, grupos de controle, pausa pelo menu, reinício sem recarregar e saída para o menu; aldeão coleta comida com clique direito em um arbusto e o total da barra superior aumenta (simulação acelerada 8× via `window.__EOC__.timeScale`); aldeão constrói uma casa pelo menu (B → C → clique), a obra é posicionada no tile escolhido, o custo é cobrado e o limite populacional passa de 10 para 15. Capturas de tela ficam em `test-results/`.
+- **Unitários (Vitest, 103):** RNG, A*, NavGrid/componentes, suavização, PathService (fila, cache, inalcançável), geração/validação de mapas em vários tamanhos e seeds, criação de partida, validação de comandos, movimento sem atravessar obstáculos, separação, determinismo, formação, projeção isométrica, seleção, formatação. **Economia:** ciclo completo com conservação verificada a cada tick, capacidade, depósito mais próximo, esgotamento e troca de alvo, ausência de depósito, troca de tipo de recurso, comando de depósito, árvore cercada, vários aldeões na mesma fonte, modificadores, cancelamento por movimento, validação, integração em mapa procedural (os 4 recursos aumentam em 3 min) e determinismo com coleta; ritmo de coleta do HUD. **Construção:** validação de posição (limites, água, sobreposição, recursos, unidades inimigas e próprias, era), validação do comando, custo e fundação, tempo com 1 construtor, aceleração com vários, ajuda em obra, cancelamento com devolução, proibições de cancelamento, depósito só ativo após conclusão, construtor de depósito passa a minerar, fila com Shift, ordem que limpa a fila, afastamento de unidades e recálculo de rotas, e integração em mapa procedural (casa + quartel). **Combate:** fórmula de dano e bônus, morte e estatísticas, lanceiro × batedor, projéteis com tempo de voo, busca automática, movimento × ataque-mover, manter posição, postura defensiva, revide, destruição de edifício, validação, batalha sem unidades em tiles bloqueados e determinística. **Treinamento:** custo e nascimento, fila em sequência, bloqueio por população, cancelamento, validação, ponto de reunião em recurso e no terreno, pré-requisito do Campo de Arqueiros. **Reparo:** custo, conclusão e parada sem recursos. **Critério da fase:** dois jogadores treinam exércitos e combatem até um lado ser derrotado.
+- **E2E (Playwright, 7):** seleciona um aldeão com o mouse, move com clique direito e verifica que ele nunca pisa em tile bloqueado e chega ao destino; seleção por arrasto, grupos de controle, pausa pelo menu, reinício sem recarregar e saída para o menu; aldeão coleta comida com clique direito em um arbusto e o total da barra superior aumenta (simulação acelerada 8× via `window.__EOC__.timeScale`); aldeão constrói uma casa pelo menu (B → C → clique), a obra é posicionada no tile escolhido, o custo é cobrado e o limite populacional passa de 10 para 15; Centro da Vila treina aldeões pela tecla Q e pelo botão; combate com clique direito (espadachim mata aldeão) e atacar-mover (arqueiro mata lanceiro, com flechas em voo); modo de teste alterna o jogador com F9. Capturas de tela ficam em `test-results/`.
 
 ## Pendências e decisões em aberto
 
@@ -62,9 +73,12 @@
 - Velocidade de jogo: existe `timeScale` na sessão (usado nos testes), mas ainda não há controle na interface.
 - Animais para caça e pesca: não implementados (fonte de comida atual: arbustos).
 - **Fazenda:** prevista na especificação (seção 8), mas fora da lista da Fase 3; fica para a Fase 6 junto com as melhorias econômicas.
-- **Reparo** de edifícios danificados: só faz sentido com combate; previsto para a Fase 4.
+- **Condições de vitória/derrota:** a simulação ainda não declara vencedor; chegam na Fase 5 junto com a IA.
+- **Fog of war:** ainda não implementado.
+- **Torres, cavalaria (estábulo), cerco e muralhas:** Fase 6.
+- **Centro da Vila** não atira flechas nem abriga aldeões (guarnição): pendente.
 - Muralhas (posicionamento arrastando em linha) e demais edifícios: Fases 4 a 6.
-- O Quartel ainda não treina unidades (Fase 4).
+- Tecla **A** também é câmera para a esquerda: com unidades militares selecionadas ela vira atacar-mover (mesma regra do S). Atalhos configuráveis seguem pendentes.
 
 ## Problemas conhecidos
 
