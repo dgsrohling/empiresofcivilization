@@ -1,0 +1,29 @@
+{
+  "name": "empires-of-civilization",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "description": "RTS medieval isométrico para navegador (React + Phaser + TypeScript).",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @eoc/client",
+    "build": "npm run typecheck && npm run build -w @eoc/client",
+    "preview": "npm run preview -w @eoc/client",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/game-data && tsc -p packages/simulation && tsc -p apps/client",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.15.0",
+    "typescript": "~5.9.2",
+    "vitest": "^5.0.4"
+  }
+}
