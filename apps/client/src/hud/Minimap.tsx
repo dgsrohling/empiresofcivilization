@@ -78,6 +78,18 @@ export function Minimap({ session }: { session: GameSession }) {
         ctx.fillStyle = toCssColor(world.getPlayer(u.owner)?.color ?? 0xffffff);
         ctx.fillRect(mx - 1.5, my - 1.5, 3, 3);
       }
+      // Alertas de ataque: círculos vermelhos pulsando por alguns segundos.
+      const now = world.time;
+      for (const ping of session.pings) {
+        const age = now - ping.time;
+        if (age > 4 || age < 0) continue;
+        const [mx, my] = toMini(ping.x, ping.y);
+        ctx.strokeStyle = `rgba(255,70,50,${1 - age / 4})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(mx, my, 4 + (age % 1) * 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       const view = session.getViewRect();
       if (view) {
         const x = (view.x / (TILE_W / 2) + H) * kx;

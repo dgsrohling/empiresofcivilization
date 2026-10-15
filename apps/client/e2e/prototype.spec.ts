@@ -242,3 +242,106 @@ test('aldeão constrói uma casa pelo menu de construção e a população máxi
   await page.screenshot({ path: test.info().outputPath('09-concluida.png') });
   expect(errors).toEqual([]);
 });
+
+test('Centro da Vila treina aldeão pela tecla Q e a fila aparece no painel', async ({ page }) => {
+  const errors = collectErrors(page);
+  await startMatch(page, '2024');
+  const tc = await page.evaluate(() => {
+    const s = window.__EOC__!;
+    const b = s.sim.world.buildings.find((x) => x.owner === 1 && x.type === 'townCenter')!;
+    return s.worldToClient(b.x, b.y - 1)!;
+  });
+  await page.mouse.click(tc.x, tc.y - 40);
+  await expect(page.getByTestId('selection-name')).toHaveText('Centro da Vila');
+  await expect(page.getByTestId('train-villager')).toBeVisible();
+  await page.keyboard.press('q');
+  await page.getByTestId('train-villager').click();
+  await expect(page.getByTestId('training-queue')).toBeVisible();
+  await expect(page.getByTestId('resource-food-amount')).toHaveText('100');
+  await page.evaluate(() => (window.__EOC__!.timeScale = 10));
+  await expect.poll(() => page.evaluate(() => window.__EOC__!.sim.world.units.filter((u) => u.owner === 1 && u.type === 'villager').length), { timeout: 30_000 }).toBe(7);
+  await expect(page.getByTestId('top-bar')).toContainText('8/10');
+  expect(errors).toEqual([]);
+});
+
+test('combate: clique direito ataca o inimigo, A + clique faz atacar-mover, flechas e mortes', async ({ page }) => {
+  const errors = collectErrors(page);
+  await startMatch(page, '2024');
+  // Cenário: tropas próprias perto do Centro da Vila e inimigos a alguns tiles.
+  const ids = await page.evaluate(() => {
+    const s = window.__EOC__!;
+    const w = s.sim.world;
+    const tc = w.buildings.find((b) => b.owner === 1)!;
+    const free = (x: number, y: number) => {
+      const p = w.grid.findNearestWalkable(Math.floor(x), Math.floor(y), w.grid.componentAt(Math.floor(tc.x) + 3, Math.floor(tc.y) + 3), 10)!;
+      return { x: p.x + 0.5, y: p.y + 0.5 };
+    };
+    const a = free(tc.x + 4, tc.y + 3);
+    const sword = w.addUnit('swordsman', 1, a.x, a.y);
+    const b = free(tc.x + 4, tc.y + 5);
+    const archer = w.addUnit('archer', 1, b.x, b.y);
+    const e = free(tc.x + 11, tc.y + 4);
+    const enemy = w.addUnit('villager', 2, e.x, e.y);
+    const f = free(tc.x + 12, tc.y + 7);
+    const enemy2 = w.addUnit('spearman', 2, f.x, f.y);
+    enemy2.stance = 'holdPosition';
+    const mid = s.worldToClient(tc.x + 8, tc.y + 5)!;
+    return { sword: sword.id, archer: archer.id, enemy: enemy.id, enemy2: enemy2.id, mid };
+  });
+  await page.evaluate(({ x, y }) => {
+    const s = window.__EOC__!;
+    const p = { x: (x - y) * 32, y: (x + y) * 16 };
+    s.centerOnScreenPoint(p.x, p.y);
+  }, await page.evaluate((id) => { const u = window.__EOC__!.sim.world.getEntity(id)!; return { x: u.x + 3, y: u.y }; }, ids.sword));
+  await page.waitForTimeout(200);
+  const pos = (id: number) => page.evaluate((i) => { const s = window.__EOC__!; const u = s.sim.world.getEntity(i)!; return s.worldToClient(u.x, u.y)!; }, id);
+
+  // Seleciona o espadachim e ataca o aldeão inimigo com o botão direito.
+  const sp = await pos(ids.sword);
+  await page.mouse.click(sp.x, sp.y - 16);
+  await expect(page.getByTestId('selection-name')).toHaveText('Espadachim');
+  const ep = await pos(ids.enemy);
+  await page.mouse.click(ep.x, ep.y - 14, { button: 'right' });
+  await expect(page.getByTestId('selection-status')).toHaveText(/Aldeão/);
+  await page.evaluate(() => (window.__EOC__!.timeScale = 4));
+  await expect.poll(() => page.evaluate((i) => !window.__EOC__!.sim.world.getEntity(i), ids.enemy), { timeout: 20_000 }).toBe(true);
+
+  // Arqueiro: A + clique (atacar-mover) até o lanceiro.
+  await page.evaluate(() => (window.__EOC__!.timeScale = 1));
+  const ap = await pos(ids.archer);
+  await page.mouse.click(ap.x, ap.y - 16);
+  await expect(page.getByTestId('selection-name')).toHaveText('Arqueiro');
+  await page.keyboard.press('a');
+  await expect(page.getByTestId('cmd-attack-move')).toHaveAttribute('aria-pressed', 'true');
+  const tp = await pos(ids.enemy2);
+  await page.mouse.click(tp.x, tp.y);
+  await expect.poll(() => page.evaluate(() => window.__EOC__!.sim.world.projectiles.length), { timeout: 15_000 }).toBeGreaterThan(0);
+  await page.screenshot({ path: test.info().outputPath('10-flechas.png') });
+  await page.evaluate(() => (window.__EOC__!.timeScale = 6));
+  await expect.poll(() => page.evaluate((i) => !window.__EOC__!.sim.world.getEntity(i), ids.enemy2), { timeout: 30_000 }).toBe(true);
+  const stats = await page.evaluate(() => window.__EOC__!.sim.world.getPlayer(1)!.stats.kills);
+  expect(stats).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test('modo de teste: F9 passa o controle para o outro jogador', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Jogar' }).click();
+  await page.getByRole('button', { name: /Pequeno/ }).click();
+  await page.getByTestId('sandbox-toggle').check();
+  await page.getByRole('button', { name: 'Iniciar partida' }).click();
+  await page.waitForFunction(() => !!window.__EOC__?.getViewRect());
+  await expect(page.getByTestId('controlled-player')).toContainText('Reino de Valdoria');
+  await page.keyboard.press('F9');
+  await expect(page.getByTestId('controlled-player')).toContainText('Império de Arkan');
+  expect(await page.evaluate(() => window.__EOC__!.localPlayerId)).toBe(2);
+  // Agora as unidades do jogador 2 aceitam comandos desta interface.
+  const result = await page.evaluate(() => {
+    const s = window.__EOC__!;
+    const u = s.sim.world.units.find((x) => x.owner === 2)!;
+    return s.issue({ type: 'stop', unitIds: [u.id] }).ok;
+  });
+  expect(result).toBe(true);
+  expect(errors).toEqual([]);
+});

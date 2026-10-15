@@ -1,6 +1,6 @@
-import { getUnitDefinition } from '@eoc/game-data';
+import { getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
 import type { EntityId, Vec2 } from '@eoc/shared';
-import { acceptsResource, type Entity, type UnitEntity } from '@eoc/simulation';
+import { acceptsResource, areEnemies, type Entity, type UnitEntity } from '@eoc/simulation';
 import Phaser from 'phaser';
 import { isTypingTarget } from '../camera/CameraController';
 import type { GameSession } from '../GameSession';
@@ -8,6 +8,7 @@ import { screenToWorld } from '../iso';
 import type { EntityRenderer } from '../rendering/EntityRenderer';
 import type { OverlayRenderer } from '../rendering/OverlayRenderer';
 import { useHudStore } from '../../stores/hudStore';
+import { TRAIN_HOTKEYS } from '../hudSnapshot';
 import type { PlacementController } from './PlacementController';
 
 const DRAG_THRESHOLD = 6;
@@ -57,7 +58,9 @@ export class InputController {
     const wp = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const hovered = this.pick(wp.x, wp.y);
     this.hoverId = hovered?.id ?? null;
-    this.setCursor(hovered && this.contextAction(hovered) !== 'move' ? 'pointer' : 'default');
+    if (useHudStore.getState().attackMoveArmed) return this.setCursor('crosshair');
+    const action = hovered ? this.contextAction(hovered) : 'move';
+    this.setCursor(action === 'attack' ? 'crosshair' : action === 'move' || action === 'rally' ? 'default' : 'pointer');
   }
 
   private setCursor(cursor: string): void {
@@ -67,9 +70,13 @@ export class InputController {
   }
 
   /** Ação que o clique direito executaria sobre a entidade, dada a seleção atual. */
-  private contextAction(target: Entity): 'gather' | 'deposit' | 'construct' | 'move' {
+  private contextAction(target: Entity): 'attack' | 'gather' | 'deposit' | 'construct' | 'repair' | 'rally' | 'move' {
     const own = this.ownSelectedUnits();
-    if (target.kind === 'building' && target.owner === this.session.localPlayerId && !target.complete && own.some(isBuilder)) return 'construct';
+    const local = this.session.localPlayerId;
+    if (own.length === 0) return this.session.selectedOwnBuilding() && this.trainsUnits() ? 'rally' : 'move';
+    if ((target.kind === 'unit' || target.kind === 'building') && areEnemies(local, target.owner) && own.some(canAttack)) return 'attack';
+    if (target.kind === 'building' && target.owner === local && !target.complete && own.some(isBuilder)) return 'construct';
+    if (target.kind === 'building' && target.owner === local && target.complete && target.hp < target.maxHp && own.some(isBuilder)) return 'repair';
     const gatherers = own.filter(isGatherer);
     if (gatherers.length === 0) return 'move';
     if (target.kind === 'resource' && target.amount > 0) return 'gather';
@@ -107,6 +114,11 @@ export class InputController {
     if (this.placement.active) {
       if (pointer.leftButtonDown()) this.placement.confirm(pointer.event.shiftKey);
       else if (pointer.rightButtonDown()) this.session.cancelPlacement();
+      return;
+    }
+    if (useHudStore.getState().attackMoveArmed) {
+      if (pointer.leftButtonDown()) this.issueAttackMove(wp.x, wp.y);
+      this.session.disarmAttackMove();
       return;
     }
     if (pointer.leftButtonDown()) {
@@ -186,14 +198,36 @@ export class InputController {
    * depositam; qualquer outro caso → mover. Unidades que não participam da ação apenas se movem.
    */
   private issueContextCommand(px: number, py: number): void {
-    const units = this.ownSelectedUnits();
-    if (units.length === 0) return;
     const now = this.scene.time.now;
     const target = this.pick(px, py);
+    const point = screenToWorld(px, py, { x: 0, y: 0 });
+    const units = this.ownSelectedUnits();
+    if (units.length === 0) {
+      // Edifício que treina unidades: define o ponto de reunião.
+      const building = this.session.selectedOwnBuilding();
+      if (!building || !this.trainsUnits()) return;
+      const targetId = target?.kind === 'resource' ? target.id : undefined;
+      const result = this.session.issue({ type: 'setRallyPoint', buildingId: building.id, target: point, targetId });
+      if (result.ok) this.overlay.addMarker(px, py, true, now);
+      else this.session.notify(result.reason);
+      return;
+    }
     const action = target ? this.contextAction(target) : 'move';
     let movers = units;
 
-    if (target && action === 'gather') {
+    if (target && action === 'attack') {
+      const fighters = units.filter(canAttack);
+      const result = this.session.issue({ type: 'attack', unitIds: fighters.map((u) => u.id), targetId: target.id });
+      if (result.ok) this.overlay.flashEntity(target.id, now, true);
+      else this.session.notify(result.reason);
+      movers = units.filter((u) => !canAttack(u));
+    } else if (target && action === 'repair') {
+      const builders = units.filter(isBuilder);
+      const result = this.session.issue({ type: 'repair', unitIds: builders.map((u) => u.id), buildingId: target.id });
+      if (result.ok) this.overlay.flashEntity(target.id, now);
+      else this.session.notify(result.reason);
+      movers = units.filter((u) => !isBuilder(u));
+    } else if (target && action === 'gather') {
       const gatherers = units.filter(isGatherer);
       const result = this.session.issue({ type: 'gather', unitIds: gatherers.map((u) => u.id), targetId: target.id });
       if (result.ok) this.overlay.flashEntity(target.id, now);
@@ -214,10 +248,22 @@ export class InputController {
     }
 
     if (movers.length === 0) return;
-    const point = screenToWorld(px, py, { x: 0, y: 0 });
     const result = this.session.issue({ type: 'move', unitIds: movers.map((u) => u.id), target: point });
     this.overlay.addMarker(px, py, result.ok, now);
     if (!result.ok) this.session.notify(result.reason);
+  }
+
+  private issueAttackMove(px: number, py: number): void {
+    const ids = this.session.ownFighterIds();
+    if (ids.length === 0) return;
+    const result = this.session.issue({ type: 'attackMove', unitIds: ids, target: screenToWorld(px, py, { x: 0, y: 0 }) });
+    this.overlay.addMarker(px, py, result.ok, this.scene.time.now, true);
+    if (!result.ok) this.session.notify(result.reason);
+  }
+
+  private trainsUnits(): boolean {
+    const b = this.session.selectedOwnBuilding();
+    return !!b && b.complete && getBuildingDefinition(b.type).trains.length > 0;
   }
 
   /**
@@ -277,6 +323,7 @@ export class InputController {
     if (e.code === 'Escape') {
       const hud = useHudStore.getState();
       if (this.placement.active) return this.session.cancelPlacement();
+      if (hud.attackMoveArmed) return this.session.disarmAttackMove();
       if (hud.buildMenuOpen) return hud.setBuildMenuOpen(false);
       selection.clear();
       this.dragRect = null;
@@ -296,6 +343,24 @@ export class InputController {
       if (option) {
         e.preventDefault();
         this.session.beginPlacement(option.type);
+        return;
+      }
+    }
+    if (e.code === 'KeyA' && !e.ctrlKey && this.session.ownFighterIds().length > 0) {
+      this.session.armAttackMove();
+      return;
+    }
+    if (e.code === 'KeyH' && !e.ctrlKey && this.session.ownFighterIds().length > 0) {
+      const stance = useHudStore.getState().snapshot?.selection.stance;
+      this.session.setStance(stance === 'holdPosition' ? 'aggressive' : 'holdPosition');
+      return;
+    }
+    const building = this.session.selectedOwnBuilding();
+    if (building && !useHudStore.getState().buildMenuOpen) {
+      const index = TRAIN_HOTKEYS.findIndex((k) => `Key${k}` === e.code);
+      const unitType = index >= 0 ? getBuildingDefinition(building.type).trains[index] : undefined;
+      if (unitType) {
+        this.session.train(unitType);
         return;
       }
     }
@@ -339,4 +404,8 @@ function isGatherer(unit: UnitEntity): boolean {
 
 function isBuilder(unit: UnitEntity): boolean {
   return !!getUnitDefinition(unit.type).builder;
+}
+
+function canAttack(unit: UnitEntity): boolean {
+  return getUnitDefinition(unit.type).attack > 0;
 }

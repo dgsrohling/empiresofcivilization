@@ -6,6 +6,8 @@ export type Screen = 'menu' | 'newGame' | 'settings' | 'tutorial' | 'credits' | 
 export interface MatchOptions {
   seed: number;
   mapSize: MapSizeId;
+  /** Modo de teste: permite alternar o controle entre os jogadores (F9). */
+  sandbox?: boolean;
 }
 
 interface AppState {

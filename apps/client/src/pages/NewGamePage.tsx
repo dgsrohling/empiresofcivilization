@@ -11,8 +11,9 @@ export function NewGamePage() {
   const { go, startMatch } = useAppStore();
   const [mapSize, setMapSize] = useState<MapSizeId>('medium');
   const [seedText, setSeedText] = useState(() => String(randomSeed()));
+  const [sandbox, setSandbox] = useState(false);
 
-  const start = () => startMatch({ mapSize, seed: seedFromString(seedText || '0') });
+  const start = () => startMatch({ mapSize, seed: seedFromString(seedText || '0'), sandbox });
 
   return (
     <ScreenFrame title="Nova Partida" onBack={() => go('menu')}>
@@ -50,15 +51,22 @@ export function NewGamePage() {
           </div>
           <p className="mt-1 text-xs text-parchment-dim">A mesma semente sempre gera o mesmo mapa. Textos também são aceitos.</p>
         </section>
+        <label className="panel-inset flex cursor-pointer items-center justify-between gap-4 px-3 py-2">
+          <span>
+            <span className="block font-display text-sm">Modo de teste</span>
+            <span className="block text-xs text-parchment-dim">Controle os dois lados, alternando com F9 — útil para testar combate antes da IA (Fase 5).</span>
+          </span>
+          <input type="checkbox" className="h-5 w-5 accent-[#d9ad4c]" checked={sandbox} onChange={(e) => setSandbox(e.target.checked)} data-testid="sandbox-toggle" />
+        </label>
         <section className="panel-inset p-3 text-sm">
           <p>
             <span className="text-brass">Você:</span> Reino de Valdoria (azul) — Centro da Vila, 5 aldeões e 1 batedor.
           </p>
           <p>
-            <span className="text-brass">Rival:</span> Império de Arkan (vermelho) — sem IA nesta fase; suas unidades permanecem paradas.
+            <span className="text-brass">Rival:</span> Império de Arkan (vermelho) — sem IA nesta fase: as unidades dele apenas se defendem.
           </p>
           <p className="mt-2 text-xs text-parchment-dim">
-            Fase 3: exploração, economia e construção de edifícios. Treinamento de unidades e combate chegam na Fase 4.
+            Fase 4: economia, construção, treinamento de unidades e combate. A IA adversária chega na Fase 5.
           </p>
         </section>
         <MedievalButton size="lg" onClick={start}>

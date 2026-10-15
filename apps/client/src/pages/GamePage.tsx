@@ -30,6 +30,8 @@ export function GamePage() {
   const setMenuOpen = useHudStore((s) => s.setMenuOpen);
   const containerRef = useRef<HTMLDivElement>(null);
   const [session, setSession] = useState<GameSession | null>(null);
+  const sessionRef = useRef<GameSession | null>(null);
+  sessionRef.current = session;
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,6 +67,9 @@ export function GamePage() {
       if (e.code === 'F10') {
         e.preventDefault();
         toggleMenu();
+      } else if (e.code === 'F9' && !useHudStore.getState().menuOpen) {
+        e.preventDefault();
+        sessionRef.current?.switchPlayer();
       } else if (e.code === 'Escape' && useHudStore.getState().menuOpen) {
         setMenuOpen(false);
       }
@@ -89,7 +94,7 @@ export function GamePage() {
       )}
       {session && (
         <div className="pointer-events-none absolute inset-0 select-none">
-          <TopBar onMenu={toggleMenu} onIdleVillager={() => session.selectNextIdleVillager()} />
+          <TopBar onMenu={toggleMenu} onIdleVillager={() => session.selectNextIdleVillager()} sandbox={match.sandbox} />
           <EconomyPanel />
           <PlacementHint />
           <Toast />

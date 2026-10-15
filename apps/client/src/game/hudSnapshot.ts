@@ -1,6 +1,6 @@
-import { AGE_NAMES, BUILD_MENU, RESOURCE_NODE_DEFINITIONS, getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
-import type { EntityId, PlayerId, ResourceAmounts, ResourceType } from '@eoc/shared';
-import { checkBuildingAvailability, type Entity, type UnitEntity, type World } from '@eoc/simulation';
+import { AGE_NAMES, BUILD_MENU, COMBAT, MAX_POPULATION, RESOURCE_NODE_DEFINITIONS, getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
+import type { EntityId, PlayerId, ResourceAmounts, ResourceType, StanceId } from '@eoc/shared';
+import { checkBuildingAvailability, missingResourceMessage, type BuildingEntity, type Entity, type UnitEntity, type World } from '@eoc/simulation';
 import { toCssColor } from './rendering/color';
 import { buildingTexture, resourceTexture, unitTexture } from './rendering/textureKeys';
 
@@ -21,7 +21,29 @@ export interface SelectedInfo {
   carry: { resource: ResourceType; amount: number; capacity: number } | null;
   /** Progresso de obra em [0, 1] (somente edifícios não concluídos). */
   buildProgress: number | null;
+  /** Fila de treinamento (edifícios próprios). */
+  queue: Array<{ unitType: string; name: string; iconKey: string; progress: number }>;
+  /** A fila está parada por falta de população. */
+  queueBlocked: boolean;
+  /** Botões de treinamento (edifício próprio concluído). */
+  trainOptions: TrainOption[];
+  hasRallyPoint: boolean;
 }
+
+export interface TrainOption {
+  type: string;
+  name: string;
+  description: string;
+  hotkey: string;
+  cost: Partial<ResourceAmounts>;
+  iconKey: string;
+  trainTime: number;
+  available: boolean;
+  reason?: string;
+}
+
+/** Atalhos dos botões de treinamento, na ordem de `trains`. */
+export const TRAIN_HOTKEYS = ['Q', 'E', 'R', 'T'] as const;
 
 export interface BuildOption {
   type: string;
@@ -65,10 +87,16 @@ export interface HudSnapshot {
     hasOwnUnits: boolean;
     /** Opções do menu de construção (vazio se não houver construtores próprios selecionados). */
     buildOptions: BuildOption[];
+    /** Há unidades militares próprias selecionadas (ataque-mover, posturas). */
+    hasFighters: boolean;
+    /** Postura comum das unidades militares selecionadas ('mixed' se diferentes). */
+    stance: StanceId | 'mixed' | null;
   };
 }
 
-const STATE_NAMES: Record<string, string> = { idle: 'Ocioso', moving: 'Em movimento', gathering: 'Coletando', building: 'Construindo' };
+const STATE_NAMES: Record<string, string> = { idle: 'Ocioso', moving: 'Em movimento', gathering: 'Coletando', building: 'Construindo', attacking: 'Atacando' };
+const DAMAGE_NAMES = { melee: 'corpo a corpo', pierce: 'perfurante' } as const;
+export const STANCE_NAMES: Record<StanceId, string> = { aggressive: 'Agressiva', defensive: 'Defensiva', holdPosition: 'Manter posição' };
 export const RESOURCE_NAMES: Record<ResourceType, string> = { food: 'comida', wood: 'madeira', gold: 'ouro', stone: 'pedra' };
 
 /** Recurso ao qual o aldeão está dedicado (pela fonte-alvo ou pela carga). */
@@ -128,6 +156,10 @@ function describe(world: World, e: Entity, localPlayerId: PlayerId): SelectedInf
     isOwn: e.owner === localPlayerId,
     hp: Math.ceil(e.hp),
     maxHp: e.maxHp,
+    queue: [] as SelectedInfo['queue'],
+    queueBlocked: false,
+    trainOptions: [] as TrainOption[],
+    hasRallyPoint: false,
   };
   if (e.kind === 'unit') {
     const def = getUnitDefinition(e.type);
@@ -144,11 +176,13 @@ function describe(world: World, e: Entity, localPlayerId: PlayerId): SelectedInf
       buildProgress: null,
       carry,
       stats: [
-        { label: 'Ataque', value: String(def.attack) },
+        { label: 'Ataque', value: `${def.attack} (${DAMAGE_NAMES[def.damageType]})` },
         { label: 'Armadura', value: `${def.armor.melee}/${def.armor.pierce}` },
         { label: 'Alcance', value: def.range === 0 ? 'Corpo a corpo' : String(def.range) },
         { label: 'Velocidade', value: def.speed.toFixed(1) },
         { label: 'Visão', value: String(def.lineOfSight) },
+        ...def.bonuses.map((b) => ({ label: `Bônus vs ${BONUS_NAMES[b.vs] ?? b.vs}`, value: `+${b.damage}` })),
+        ...(def.autoAttack ? [{ label: 'Postura', value: STANCE_NAMES[e.stance] }] : []),
       ],
     };
   }
@@ -161,6 +195,7 @@ function describe(world: World, e: Entity, localPlayerId: PlayerId): SelectedInf
       status: e.complete ? 'Concluído' : `Em construção — ${Math.floor(e.buildProgress * 100)}%`,
       carry: null,
       buildProgress: e.complete ? null : e.buildProgress,
+      ...(e.owner === localPlayerId && e.complete ? trainingInfo(world, e) : {}),
       stats: [
         { label: 'Armadura', value: `${def.armor.melee}/${def.armor.pierce}` },
         { label: 'População', value: `+${def.populationProvided}` },
@@ -195,6 +230,37 @@ function summarizeEconomy(world: World, localPlayerId: PlayerId, ratePerMinute: 
   }
   const player = world.getPlayer(localPlayerId);
   return { workers, idleVillagers, gathered: player ? { ...player.stats.gathered } : { food: 0, wood: 0, gold: 0, stone: 0 }, ratePerMinute };
+}
+
+const BONUS_NAMES: Record<string, string> = { cavalry: 'cavalaria', archer: 'arqueiros', infantry: 'infantaria', building: 'edifícios', economic: 'aldeões', siege: 'cerco' };
+
+function trainingInfo(world: World, b: BuildingEntity) {
+  const def = getBuildingDefinition(b.type);
+  const player = world.getPlayer(b.owner);
+  const queue = b.queue.map((item) => {
+    const u = getUnitDefinition(item.unitType);
+    return { unitType: item.unitType, name: u.name, iconKey: unitTexture(item.unitType, b.owner), progress: Math.min(1, item.progress / u.trainTime) };
+  });
+  const head = b.queue[0];
+  const cap = Math.min(player?.populationCap ?? 0, MAX_POPULATION);
+  const queueBlocked = !!head && head.progress === 0 && (player?.population ?? 0) + getUnitDefinition(head.unitType).populationCost > cap;
+  const trainOptions: TrainOption[] = def.trains.map((type, i) => {
+    const u = getUnitDefinition(type);
+    const missing = player ? missingResourceMessage(player, u.cost) : 'Jogador inválido';
+    const full = b.queue.length >= COMBAT.maxQueue;
+    return {
+      type,
+      name: u.name,
+      description: u.description,
+      hotkey: TRAIN_HOTKEYS[i] ?? '',
+      cost: u.cost,
+      iconKey: unitTexture(type, b.owner),
+      trainTime: u.trainTime,
+      available: !missing && !full,
+      reason: full ? 'Fila cheia' : (missing ?? undefined),
+    };
+  });
+  return { queue, queueBlocked, trainOptions, hasRallyPoint: b.rallyPoint !== null };
 }
 
 function buildOptions(world: World, entities: Entity[], localPlayerId: PlayerId): BuildOption[] {
@@ -240,6 +306,14 @@ export function buildHudSnapshot(world: World, selection: readonly EntityId[], l
       groups: [...groups.values()],
       hasOwnUnits: entities.some((e) => e.kind === 'unit' && e.owner === localPlayerId),
       buildOptions: buildOptions(world, entities, localPlayerId),
+      ...fighterInfo(entities, localPlayerId),
     },
   };
+}
+
+function fighterInfo(entities: Entity[], localPlayerId: PlayerId): { hasFighters: boolean; stance: StanceId | 'mixed' | null } {
+  const fighters = entities.filter((e): e is UnitEntity => e.kind === 'unit' && e.owner === localPlayerId && getUnitDefinition(e.type).autoAttack);
+  if (fighters.length === 0) return { hasFighters: false, stance: null };
+  const first = fighters[0]!.stance;
+  return { hasFighters: true, stance: fighters.every((f) => f.stance === first) ? first : 'mixed' };
 }

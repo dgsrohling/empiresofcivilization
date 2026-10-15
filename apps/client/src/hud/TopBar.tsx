@@ -9,9 +9,10 @@ export const RESOURCE_LABELS = { food: 'Comida', wood: 'Madeira', gold: 'Ouro', 
 interface Props {
   onMenu: () => void;
   onIdleVillager: () => void;
+  sandbox?: boolean;
 }
 
-export function TopBar({ onMenu, onIdleVillager }: Props) {
+export function TopBar({ onMenu, onIdleVillager, sandbox }: Props) {
   const snapshot = useHudStore((s) => s.snapshot);
   const fps = useHudStore((s) => s.fps);
   const economyOpen = useHudStore((s) => s.economyOpen);
@@ -56,6 +57,11 @@ export function TopBar({ onMenu, onIdleVillager }: Props) {
         {economy.idleVillagers} ociosos
       </button>
       <div className="mx-auto flex items-center gap-3 font-display text-xs tracking-wider">
+        {sandbox && (
+          <span className="panel-inset px-2 py-1" title="Modo de teste: F9 alterna o jogador controlado" data-testid="controlled-player">
+            <span style={{ color: snapshot.playerColor }}>{snapshot.playerName}</span> <span className="text-parchment-dim">(F9)</span>
+          </span>
+        )}
         <span className="hidden text-brass lg:inline">{snapshot.ageName}</span>
         <span className="panel-inset px-2 py-1 font-mono text-sm tabular-nums" title="Tempo de partida" data-testid="match-time">
           {formatTime(snapshot.time)}

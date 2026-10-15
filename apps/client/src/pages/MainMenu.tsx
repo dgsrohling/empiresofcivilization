@@ -27,7 +27,7 @@ export function MainMenu() {
           <MedievalButton onClick={() => go('tutorial')}>Tutorial e controles</MedievalButton>
           <MedievalButton onClick={() => go('credits')}>Créditos</MedievalButton>
         </nav>
-        <p className="mt-6 text-xs text-parchment-dim/70">Versão 0.3.0 · Protótipo da Fase 3</p>
+        <p className="mt-6 text-xs text-parchment-dim/70">Versão 0.4.0 · Protótipo da Fase 4</p>
       </div>
     </div>
   );

@@ -76,6 +76,27 @@ export function SelectionPanel({ session }: { session: GameSession }) {
             </div>
           ))}
         </div>
+        {p.queue.length > 0 && (
+          <div className="mt-1 flex flex-wrap items-center gap-1" data-testid="training-queue">
+            {p.queue.map((item, i) => (
+              <button
+                key={i}
+                type="button"
+                className="relative"
+                title={`${item.name} — clique para cancelar (devolve o custo)`}
+                onClick={() => session.cancelTrain(i)}
+              >
+                <Icon session={session} iconKey={item.iconKey} size={i === 0 ? 34 : 26} />
+                {i === 0 && (
+                  <span className="absolute inset-x-0.5 bottom-0.5 h-1 bg-black/70">
+                    <span className="block h-full bg-brass" style={{ width: `${item.progress * 100}%` }} />
+                  </span>
+                )}
+              </button>
+            ))}
+            {p.queueBlocked && <span className="ml-1 text-xs text-red-300">População máxima — construa casas</span>}
+          </div>
+        )}
         <div className="mt-auto flex items-center gap-4 text-xs">
           <span>
             <span className="text-parchment-dim">Estado: </span>

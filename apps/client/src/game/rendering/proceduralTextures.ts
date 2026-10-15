@@ -3,9 +3,11 @@ import { RESOURCE_TYPES, Terrain, TERRAIN_COUNT, type PlayerId, type ResourceTyp
 import { Rng } from '@eoc/simulation';
 import type Phaser from 'phaser';
 import { buildingArt, drawBuilding } from './art/buildings';
+import { SOLDIER_SIZE, drawArcher, drawArrow, drawRubble, drawSpearman, drawSwordsman } from './art/units';
 import { circle, diamond, poly, shadow, type Ctx, type Point } from './art/primitives';
 import { shade, toCssColor } from './color';
 import {
+  ARROW_TEXTURE,
   FELLED_TREE_TEXTURE,
   TERRAIN_FRAME_H,
   TERRAIN_FRAME_W,
@@ -15,6 +17,7 @@ import {
   buildingTexture,
   carryTexture,
   resourceTexture,
+  rubbleTexture,
   terrainFrame,
   unitTexture,
 } from './textureKeys';
@@ -34,7 +37,15 @@ export const ORIGINS = {
   berryBush: { x: 0.5, y: 26 / 34 },
   villager: { x: 0.5, y: 35 / 38 },
   scout: { x: 0.5, y: 41 / 44 },
+  soldier: { x: SOLDIER_SIZE.footX / SOLDIER_SIZE.w, y: SOLDIER_SIZE.footY / SOLDIER_SIZE.h },
 } as const;
+
+/** Ponto de apoio de uma unidade, por tipo. */
+export function unitOrigin(type: string): { x: number; y: number } {
+  if (type === 'villager') return ORIGINS.villager;
+  if (type === 'scout') return ORIGINS.scout;
+  return ORIGINS.soldier;
+}
 
 /** Ponto de apoio de um edifício (centro do losango da base). */
 export function buildingOrigin(type: string): { x: number; y: number } {
@@ -48,6 +59,8 @@ export function generateTextures(scene: Phaser.Scene, playerColors: ReadonlyMap<
   createTerrainAtlas(scene);
   for (let v = 0; v < TREE_VARIANTS; v++) canvasTexture(scene, resourceTexture('tree', v), 48, 72, (ctx) => drawTree(ctx, v));
   canvasTexture(scene, FELLED_TREE_TEXTURE, 48, 72, drawFelledTree);
+  canvasTexture(scene, ARROW_TEXTURE, 14, 4, drawArrow);
+  for (const n of [2, 3, 4]) canvasTexture(scene, rubbleTexture(n), n * 64 + 8, n * 32 + 20, (ctx) => drawRubble(ctx, n, n * 7919));
   for (const r of RESOURCE_TYPES) canvasTexture(scene, carryTexture(r), 12, 10, (ctx) => drawCarry(ctx, r));
   canvasTexture(scene, resourceTexture('goldMine'), 56, 44, (ctx) => drawMine(ctx, '#8d8a80', '#f2c94c'));
   canvasTexture(scene, resourceTexture('stoneMine'), 56, 44, (ctx) => drawMine(ctx, '#a19d94', null));
@@ -55,6 +68,9 @@ export function generateTextures(scene: Phaser.Scene, playerColors: ReadonlyMap<
   for (const [owner, color] of playerColors) {
     canvasTexture(scene, unitTexture('villager', owner), 26, 38, (ctx) => drawVillager(ctx, color));
     canvasTexture(scene, unitTexture('scout', owner), 48, 44, (ctx) => drawScout(ctx, color));
+    canvasTexture(scene, unitTexture('swordsman', owner), SOLDIER_SIZE.w, SOLDIER_SIZE.h, (ctx) => drawSwordsman(ctx, color));
+    canvasTexture(scene, unitTexture('spearman', owner), SOLDIER_SIZE.w, SOLDIER_SIZE.h, (ctx) => drawSpearman(ctx, color));
+    canvasTexture(scene, unitTexture('archer', owner), SOLDIER_SIZE.w, SOLDIER_SIZE.h, (ctx) => drawArcher(ctx, color));
     for (const type of Object.keys(BUILDING_DEFINITIONS)) {
       const art = buildingArt(type);
       canvasTexture(scene, buildingTexture(type, owner), art.width, art.height, (ctx) => drawBuilding(ctx, type, color));

@@ -14,3 +14,5 @@ export const resourceTexture = (nodeType: string, variant: number | string = 0) 
 /** Árvore já cortada (tronco caído + toco). */
 export const FELLED_TREE_TEXTURE = resourceTexture('tree', 'felled');
 export const carryTexture = (resource: ResourceType) => `carry_${resource}`;
+export const ARROW_TEXTURE = 'projectile_arrow';
+export const rubbleTexture = (tiles: number) => `rubble_${tiles}`;

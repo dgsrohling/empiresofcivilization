@@ -15,12 +15,15 @@ interface HudState {
   buildMenuOpen: boolean;
   /** Nome do edifício sendo posicionado (null fora do modo de posicionamento). */
   placing: string | null;
+  /** Modo ataque-mover armado (próximo clique esquerdo define o destino). */
+  attackMoveArmed: boolean;
   setSnapshot: (snapshot: HudSnapshot, fps: number) => void;
   notify: (text: string) => void;
   setMenuOpen: (open: boolean) => void;
   toggleEconomy: () => void;
   setBuildMenuOpen: (open: boolean) => void;
   setPlacing: (name: string | null) => void;
+  setAttackMoveArmed: (armed: boolean) => void;
   reset: () => void;
 }
 
@@ -38,11 +41,13 @@ export const useHudStore = create<HudState>((set) => ({
   economyOpen: false,
   buildMenuOpen: false,
   placing: null,
+  attackMoveArmed: false,
   setSnapshot: (snapshot, fps) => set({ snapshot, fps }),
   notify: (text) => set({ notification: { id: nextNotification++, text } }),
   setMenuOpen: (menuOpen) => set({ menuOpen }),
   toggleEconomy: () => set((s) => ({ economyOpen: !s.economyOpen })),
   setBuildMenuOpen: (buildMenuOpen) => set({ buildMenuOpen }),
   setPlacing: (placing) => set({ placing }),
-  reset: () => set({ snapshot: null, notification: null, menuOpen: false, buildMenuOpen: false, placing: null }),
+  setAttackMoveArmed: (attackMoveArmed) => set({ attackMoveArmed }),
+  reset: () => set({ snapshot: null, notification: null, menuOpen: false, buildMenuOpen: false, placing: null, attackMoveArmed: false }),
 }));

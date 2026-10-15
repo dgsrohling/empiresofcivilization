@@ -1,5 +1,6 @@
 import type { EntityId, Vec2 } from '@eoc/shared';
 import type { Entity, World } from '@eoc/simulation';
+import { COMBAT } from '@eoc/game-data';
 import Phaser from 'phaser';
 import { TILE_H, TILE_W, worldToScreen } from '../iso';
 import type { EntityRenderer } from './EntityRenderer';
@@ -14,6 +15,7 @@ interface Marker {
 interface Flash {
   id: EntityId;
   start: number;
+  color: number;
 }
 
 const MARKER_DURATION = 650;
@@ -33,6 +35,8 @@ export interface OverlayState {
   alpha: number;
   zoom: number;
   timeMs: number;
+  /** Tempo de jogo (s), para barras de vida de quem sofreu dano recentemente. */
+  worldTime: number;
 }
 
 /** Indicadores visuais: seleção, vida, destino, caminho e retângulo de seleção. */
@@ -52,14 +56,14 @@ export class OverlayRenderer {
     this.top = scene.add.graphics().setDepth(1e9);
   }
 
-  addMarker(screenX: number, screenY: number, ok: boolean, timeMs: number): void {
-    this.markers.push({ x: screenX, y: screenY, start: timeMs, color: ok ? COLOR_OWN : COLOR_ENEMY });
+  addMarker(screenX: number, screenY: number, ok: boolean, timeMs: number, attack = false): void {
+    this.markers.push({ x: screenX, y: screenY, start: timeMs, color: !ok || attack ? COLOR_ENEMY : COLOR_OWN });
     if (this.markers.length > 8) this.markers.shift();
   }
 
   /** Destaca brevemente uma entidade (alvo de coleta ou depósito). */
-  flashEntity(id: EntityId, timeMs: number): void {
-    this.flashes.push({ id, start: timeMs });
+  flashEntity(id: EntityId, timeMs: number, hostile = false): void {
+    this.flashes.push({ id, start: timeMs, color: hostile ? COLOR_ENEMY : COLOR_TARGET });
     if (this.flashes.length > 8) this.flashes.shift();
   }
 
@@ -86,9 +90,19 @@ export class OverlayRenderer {
       if (e) this.drawFootprint(g, e, 0xffffff, 0.45, lw, state.alpha);
     }
 
+    // Barras de vida de quem sofreu dano recentemente (além dos selecionados).
+    const recent = state.worldTime - COMBAT.damageDisplayTime;
+    for (const u of this.world.units) {
+      if (u.lastDamagedAt >= recent && !state.selection.includes(u.id) && this.entities.getSprite(u.id)?.visible) this.drawHealthBar(t, u, state.alpha, lw);
+    }
+    for (const b of this.world.buildings) {
+      if (b.lastDamagedAt >= recent && !state.selection.includes(b.id) && this.entities.getSprite(b.id)?.visible) this.drawHealthBar(t, b, state.alpha, lw);
+    }
+
     for (const id of state.selection) {
       const e = this.world.getEntity(id);
       if (!e) continue;
+      if (e.kind === 'building' && e.owner === state.localPlayerId && e.rallyPoint) this.drawRallyPoint(g, t, e.x, e.y, e.rallyPoint, lw);
       const color = e.owner === state.localPlayerId ? COLOR_OWN : e.owner === 0 ? COLOR_NEUTRAL : COLOR_ENEMY;
       this.drawFootprint(g, e, color, 0.95, lw * 1.3, state.alpha);
       if (e.kind !== 'resource') this.drawHealthBar(t, e, state.alpha, lw);
@@ -104,7 +118,7 @@ export class OverlayRenderer {
         continue;
       }
       // Pisca três vezes enquanto desvanece.
-      if (Math.floor(k * 6) % 2 === 0) this.drawFootprint(g, e, COLOR_TARGET, 1 - k * 0.6, lw * 1.6, state.alpha);
+      if (Math.floor(k * 6) % 2 === 0) this.drawFootprint(g, e, f.color, 1 - k * 0.6, lw * 1.6, state.alpha);
     }
 
     for (let i = this.markers.length - 1; i >= 0; i--) {
@@ -174,6 +188,24 @@ export class OverlayRenderer {
     t.fillRect(x - width / 2, y, width * ratio, h);
     t.lineStyle(lw * 0.6, 0x000000, 0.6);
     t.strokeRect(x - width / 2 - 1, y - 1, width + 2, h + 2);
+  }
+
+  /** Linha tracejada do edifício até a bandeira do ponto de reunião. */
+  private drawRallyPoint(g: Phaser.GameObjects.Graphics, t: Phaser.GameObjects.Graphics, bx: number, by: number, rally: { x: number; y: number }, lw: number): void {
+    const from = worldToScreen(bx, by);
+    const to = worldToScreen(rally.x, rally.y);
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.floor(dist / 10);
+    g.lineStyle(lw, 0xfff3c0, 0.6);
+    for (let i = 0; i < steps; i += 2) {
+      const a = i / steps;
+      const b = Math.min(1, (i + 1) / steps);
+      g.lineBetween(from.x + (to.x - from.x) * a, from.y + (to.y - from.y) * a, from.x + (to.x - from.x) * b, from.y + (to.y - from.y) * b);
+    }
+    t.lineStyle(lw * 1.5, 0x4a3420, 1);
+    t.lineBetween(to.x, to.y, to.x, to.y - 22);
+    t.fillStyle(0xe0b44c, 1);
+    t.fillTriangle(to.x, to.y - 22, to.x + 13, to.y - 18, to.x, to.y - 14);
   }
 
   private drawProgressBar(t: Phaser.GameObjects.Graphics, id: EntityId, progress: number, lw: number): void {

@@ -17,7 +17,7 @@ export interface BuildingArt {
 }
 
 /** Altura total da imagem por tipo (o resto é derivado da área ocupada). */
-const ART_HEIGHT: Record<string, number> = { townCenter: 240, house: 130, lumberCamp: 115, miningCamp: 115, barracks: 180 };
+const ART_HEIGHT: Record<string, number> = { townCenter: 240, house: 130, lumberCamp: 115, miningCamp: 115, barracks: 180, archeryRange: 150 };
 
 export function buildingArt(type: string): BuildingArt {
   const { w, h } = getBuildingDefinition(type).footprint;
@@ -42,6 +42,8 @@ export function drawBuilding(ctx: Ctx, type: string, playerColor: number): void 
       return drawMiningCamp(ctx, playerColor, art);
     case 'barracks':
       return drawBarracks(ctx, playerColor, art);
+    case 'archeryRange':
+      return drawArcheryRange(ctx, playerColor, art);
     default:
       // Edifício sem arte própria: bloco neutro com bandeira (nunca deixa o jogo sem imagem).
       isoBox(ctx, cx, cy, art.hw * 0.8, art.hh * 0.8, 40, '#b8ad98', '#a39883', '#857b68');
@@ -168,6 +170,57 @@ function drawMiningCamp(ctx: Ctx, playerColor: number, a: BuildingArt): void {
   circle(ctx, x - 9, y - 6, 3, '#2b1d10');
   circle(ctx, x + 9, y - 2, 3, '#2b1d10');
   flag(ctx, apex[0], apex[1], 22, toCssColor(playerColor), shade(playerColor, -0.3));
+}
+
+function drawArcheryRange(ctx: Ctx, playerColor: number, a: BuildingArt): void {
+  const { baseX: cx, baseY: cy, hw, hh } = a;
+  const color = toCssColor(playerColor);
+  // Terreno batido com cerca baixa
+  ctx.fillStyle = '#8a7350';
+  poly(ctx, [[cx, cy - hh + 4], [cx + hw - 6, cy], [cx, cy + hh - 4], [cx - hw + 6, cy]]);
+  ctx.strokeStyle = '#5a3d22';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - hw + 6, cy - 6);
+  ctx.lineTo(cx, cy + hh - 10);
+  ctx.lineTo(cx + hw - 6, cy - 6);
+  ctx.stroke();
+  for (let i = 0; i <= 6; i++) {
+    const t = i / 6;
+    const x = t <= 0.5 ? cx - hw + 6 + (hw - 6) * t * 2 : cx + (hw - 6) * (t - 0.5) * 2;
+    const y = t <= 0.5 ? cy + (hh - 4) * t * 2 : cy + (hh - 4) * (1 - (t - 0.5) * 2);
+    ctx.beginPath();
+    ctx.moveTo(x, y - 2);
+    ctx.lineTo(x, y - 12);
+    ctx.stroke();
+  }
+  // Pequeno galpão ao fundo
+  const bx = cx + hw * 0.18;
+  const by = cy - hh * 0.38;
+  isoBox(ctx, bx, by, hw * 0.4, hh * 0.4, 30, '#c9b38a', '#c4ad82', '#a08a63');
+  timber(ctx, bx, by, hw * 0.4, hh * 0.4, 30, 3);
+  door(ctx, bx, by, hw * 0.4, hh * 0.4, 0.35, 10, 16);
+  const apex = pyramidRoof(ctx, bx, by - 30, hw * 0.48, hh * 0.48, 34, '#4f6b3a', '#3c5530');
+  // Alvos de treino
+  for (const [ox, oy] of [
+    [-0.45, 0.12],
+    [-0.12, 0.42],
+  ] as const) {
+    const x = cx + hw * ox;
+    const y = cy + hh * oy;
+    ctx.strokeStyle = '#5a3d22';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 5, y);
+    ctx.lineTo(x, y - 12);
+    ctx.lineTo(x + 5, y);
+    ctx.stroke();
+    circle(ctx, x, y - 16, 8, '#e8dcc0');
+    circle(ctx, x, y - 16, 5.5, '#b8322a');
+    circle(ctx, x, y - 16, 3, '#e8dcc0');
+    circle(ctx, x, y - 16, 1.3, '#b8322a');
+  }
+  flag(ctx, apex[0], apex[1], 26, color, shade(playerColor, -0.3));
 }
 
 function drawBarracks(ctx: Ctx, playerColor: number, a: BuildingArt): void {

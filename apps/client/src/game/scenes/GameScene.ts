@@ -9,9 +9,11 @@ import { RESOURCE_NAMES, buildHudSnapshot } from '../hudSnapshot';
 import { InputController } from '../input/InputController';
 import { PlacementController } from '../input/PlacementController';
 import { getBuildingDefinition } from '@eoc/game-data';
+import { areEnemies } from '@eoc/simulation';
 import { mapScreenBounds, worldToScreen } from '../iso';
 import { toCssColor } from '../rendering/color';
 import { EntityRenderer } from '../rendering/EntityRenderer';
+import { EffectsRenderer } from '../rendering/EffectsRenderer';
 import { OverlayRenderer } from '../rendering/OverlayRenderer';
 import { generateTextures } from '../rendering/proceduralTextures';
 import { TerrainRenderer } from '../rendering/TerrainRenderer';
@@ -31,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private terrain!: TerrainRenderer;
   private entities!: EntityRenderer;
   private overlay!: OverlayRenderer;
+  private effects!: EffectsRenderer;
   private inputController!: InputController;
   private placement!: PlacementController;
   private accumulator = 0;
@@ -50,6 +53,7 @@ export class GameScene extends Phaser.Scene {
     this.terrain = new TerrainRenderer(this, world.map);
     this.entities = new EntityRenderer(this, world);
     this.overlay = new OverlayRenderer(this, world, this.entities);
+    this.effects = new EffectsRenderer(this, world);
 
     const cam = this.cameras.main;
     const bounds = mapScreenBounds(world.width, world.height);
@@ -63,7 +67,7 @@ export class GameScene extends Phaser.Scene {
     this.cameraController = new CameraController(
       this,
       () => useSettingsStore.getState(),
-      (code) => code === 'KeyS' && this.hasOwnSelection(),
+      (code) => (code === 'KeyS' && this.hasOwnSelection()) || ((code === 'KeyA' || code === 'KeyH') && this.session.ownFighterIds().length > 0),
     );
     this.placement = new PlacementController(this, this.session);
     this.inputController = new InputController(this, this.session, this.entities, this.overlay, this.placement);
@@ -93,6 +97,7 @@ export class GameScene extends Phaser.Scene {
     this.view.setTo(wv.x - 96, wv.y - 96, wv.width + 192, wv.height + 256);
     this.terrain.cull(this.view);
     this.entities.update(alpha, now, this.view);
+    this.effects.update(alpha, this.view);
     this.placement.update();
     this.inputController.update();
 
@@ -106,6 +111,7 @@ export class GameScene extends Phaser.Scene {
       alpha,
       zoom: this.cameras.main.zoom,
       timeMs: now,
+      worldTime: this.session.sim.world.time,
     });
 
     this.hudTimer += delta;
@@ -118,6 +124,7 @@ export class GameScene extends Phaser.Scene {
   private handleEvents(events: SimEvent[]): void {
     if (events.length === 0) return;
     this.entities.applyEvents(events);
+    this.effects.applyEvents(events, this.view);
     const local = this.session.localPlayerId;
     for (const e of events) {
       if (e.type === 'deposited' && e.playerId === local) {
@@ -130,6 +137,14 @@ export class GameScene extends Phaser.Scene {
           .map(([r, n]) => `${n} de ${RESOURCE_NAMES[r as keyof typeof RESOURCE_NAMES]}`)
           .join(', ');
         this.session.notify(refund ? `Obra cancelada — devolvido: ${refund}` : 'Obra cancelada');
+      } else if (e.type === 'attacked' && e.owner === local && areEnemies(local, e.attackerOwner)) {
+        this.session.reportAttack(e.x, e.y);
+      } else if (e.type === 'entityDied' && e.owner === local && e.kind === 'building') {
+        this.session.notify(`${getBuildingDefinition(e.entityType).name} destruído(a)!`);
+      } else if (e.type === 'trainingBlocked' && e.playerId === local) {
+        this.session.notify('População máxima atingida — construa mais casas');
+      } else if (e.type === 'repairStopped' && e.playerId === local && e.reason === 'resources') {
+        this.session.notify('Recursos insuficientes para continuar o reparo');
       } else if (e.type === 'noDropsite' && e.playerId === local) {
         this.session.notify(`Nenhum depósito disponível para ${RESOURCE_NAMES[e.resource]}`);
       }

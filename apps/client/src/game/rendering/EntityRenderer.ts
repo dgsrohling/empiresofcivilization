@@ -2,7 +2,7 @@ import type { EntityId, Vec2 } from '@eoc/shared';
 import type { BuildingEntity, Entity, SimEvent, UnitEntity, World } from '@eoc/simulation';
 import Phaser from 'phaser';
 import { worldToScreen } from '../iso';
-import { ORIGINS, buildingOrigin } from './proceduralTextures';
+import { ORIGINS, buildingOrigin, unitOrigin } from './proceduralTextures';
 import { FELLED_TREE_TEXTURE, TREE_VARIANTS, buildingTexture, carryTexture, resourceTexture, unitTexture } from './textureKeys';
 
 const STATIC_CHUNK = 16;
@@ -86,7 +86,7 @@ export class EntityRenderer {
     for (const unit of this.world.units) {
       let sprite = this.unitSprites.get(unit.id);
       if (!sprite) {
-        const origin = unit.type === 'scout' ? ORIGINS.scout : ORIGINS.villager;
+        const origin = unitOrigin(unit.type);
         sprite = this.scene.add.image(0, 0, unitTexture(unit.type, unit.owner)).setOrigin(origin.x, origin.y);
         this.unitSprites.set(unit.id, sprite);
       }
@@ -100,8 +100,10 @@ export class EntityRenderer {
       const bob = moving ? -Math.abs(Math.sin(timeMs * 0.012 + unit.id)) * 2 : 0;
       sprite.setPosition(p.x, p.y + bob);
       sprite.setDepth(p.y);
-      // Coleta: balanço do corpo, como se usasse a ferramenta.
-      sprite.setAngle(unit.state === 'gathering' || unit.state === 'building' ? Math.sin(timeMs * 0.014 + unit.id) * 11 : 0);
+      // Coleta/obra: balanço do corpo, como se usasse a ferramenta. Ataque: investida rápida.
+      if (unit.state === 'gathering' || unit.state === 'building') sprite.setAngle(Math.sin(timeMs * 0.014 + unit.id) * 11);
+      else if (unit.state === 'attacking') sprite.setAngle(Math.sin(timeMs * 0.022 + unit.id) * 14 * (sprite.flipX ? -1 : 1));
+      else sprite.setAngle(0);
       const screenDx = Math.cos(unit.heading) - Math.sin(unit.heading);
       if (Math.abs(screenDx) > 0.05) sprite.setFlipX(screenDx < 0);
       const carry = this.carrySprites.get(unit.id);

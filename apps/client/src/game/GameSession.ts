@@ -1,6 +1,5 @@
-import { PLAYER_COLORS } from '@eoc/game-data';
-import { MAP_SIZES, type CommandResult, type GameCommand, type MapSizeId, type PlayerId, type Vec2 } from '@eoc/shared';
-import { getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
+import { MAP_SIZES, type CommandResult, type GameCommand, type MapSizeId, type PlayerId, type StanceId, type Vec2 } from '@eoc/shared';
+import { PLAYER_COLORS, getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
 import { checkBuildingAvailability, checkPlacement, createMatch, findNearestDropsite, type Simulation } from '@eoc/simulation';
 import Phaser from 'phaser';
 import { useHudStore } from '../stores/hudStore';
@@ -12,7 +11,17 @@ import { SelectionModel } from './selection/SelectionModel';
 export interface SessionOptions {
   seed: number;
   mapSize: MapSizeId;
+  sandbox?: boolean;
 }
+
+export interface MinimapPing {
+  x: number;
+  y: number;
+  time: number;
+}
+
+/** Intervalo mínimo (s de jogo) entre alertas de ataque. */
+const ATTACK_ALERT_INTERVAL = 15;
 
 /**
  * Ponte entre a interface React e o jogo (Phaser + simulação).
@@ -20,7 +29,11 @@ export interface SessionOptions {
  */
 export class GameSession {
   readonly sim: Simulation;
-  readonly localPlayerId: PlayerId = 1;
+  /** Jogador controlado nesta máquina (alterna no modo de teste). */
+  localPlayerId: PlayerId = 1;
+  /** Alertas recentes de ataque (mostrados no minimapa). */
+  readonly pings: MinimapPing[] = [];
+  private lastAttackAlert = -Infinity;
   readonly selection = new SelectionModel();
   paused = false;
   /** Multiplicador de velocidade da simulação (1 = normal). */
@@ -76,6 +89,78 @@ export class GameSession {
       const e = world.getEntity(id);
       return e?.kind === 'unit' && e.owner === this.localPlayerId;
     });
+  }
+
+  /** Unidades próprias selecionadas que podem atacar. */
+  ownFighterIds(): number[] {
+    const world = this.sim.world;
+    return this.selection.current.filter((id) => {
+      const e = world.getEntity(id);
+      return e?.kind === 'unit' && e.owner === this.localPlayerId && getUnitDefinition(e.type).attack > 0 && getUnitDefinition(e.type).autoAttack;
+    });
+  }
+
+  armAttackMove(): void {
+    if (this.ownFighterIds().length === 0) return;
+    this.cancelPlacement();
+    useHudStore.getState().setAttackMoveArmed(true);
+  }
+
+  disarmAttackMove(): void {
+    useHudStore.getState().setAttackMoveArmed(false);
+  }
+
+  setStance(stance: StanceId): void {
+    const ids = this.ownFighterIds();
+    if (ids.length > 0) this.issue({ type: 'setStance', unitIds: ids, stance });
+  }
+
+  /** Edifício próprio selecionado (um só) — alvo dos botões de treinamento. */
+  selectedOwnBuilding() {
+    if (this.selection.current.length !== 1) return null;
+    const e = this.sim.world.getEntity(this.selection.current[0]!);
+    return e?.kind === 'building' && e.owner === this.localPlayerId ? e : null;
+  }
+
+  train(unitType: string): void {
+    const b = this.selectedOwnBuilding();
+    if (!b) return;
+    const result = this.issue({ type: 'train', buildingId: b.id, unitType });
+    if (!result.ok) this.notify(result.reason);
+  }
+
+  cancelTrain(index: number): void {
+    const b = this.selectedOwnBuilding();
+    if (b) this.issue({ type: 'cancelTrain', buildingId: b.id, index });
+  }
+
+  /** Registra um ataque sofrido: alerta (com intervalo mínimo) e marca no minimapa. */
+  reportAttack(x: number, y: number): void {
+    const now = this.sim.world.time;
+    this.pings.push({ x, y, time: now });
+    if (this.pings.length > 12) this.pings.shift();
+    if (now - this.lastAttackAlert >= ATTACK_ALERT_INTERVAL) {
+      this.lastAttackAlert = now;
+      this.notify('Você está sendo atacado!');
+    }
+  }
+
+  /** Modo de teste: passa o controle para o outro jogador. */
+  switchPlayer(): void {
+    if (!this.options.sandbox) return;
+    const ids = [...this.sim.world.players.keys()].sort((a, b) => a - b);
+    const next = ids[(ids.indexOf(this.localPlayerId) + 1) % ids.length]!;
+    this.localPlayerId = next;
+    this.selection.clear();
+    this.cancelPlacement();
+    this.disarmAttackMove();
+    useHudStore.getState().setBuildMenuOpen(false);
+    const tc = this.sim.world.buildings.find((b) => b.owner === next);
+    if (tc) {
+      const p = worldToScreen(tc.x, tc.y);
+      this.centerOnScreenPoint(p.x, p.y + 60);
+    }
+    this.notify(`Controlando: ${this.sim.world.getPlayer(next)?.name ?? next}`);
   }
 
   /** Aldeões (construtores) próprios na seleção atual. */
