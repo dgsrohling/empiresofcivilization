@@ -53,6 +53,58 @@ export interface CancelBuildingCommand {
   buildingId: EntityId;
 }
 
+/** Ataca uma unidade ou edifício inimigo (persegue até destruí-lo ou perdê-lo). */
+export interface AttackCommand {
+  type: 'attack';
+  unitIds: EntityId[];
+  targetId: EntityId;
+}
+
+/** Move até um ponto atacando inimigos encontrados no caminho. */
+export interface AttackMoveCommand {
+  type: 'attackMove';
+  unitIds: EntityId[];
+  target: Vec2;
+}
+
+export type StanceId = 'aggressive' | 'defensive' | 'holdPosition';
+
+/** Define a postura de combate (agressiva, defensiva ou manter posição). */
+export interface SetStanceCommand {
+  type: 'setStance';
+  unitIds: EntityId[];
+  stance: StanceId;
+}
+
+/** Repara um edifício próprio danificado (custa recursos). */
+export interface RepairCommand {
+  type: 'repair';
+  unitIds: EntityId[];
+  buildingId: EntityId;
+}
+
+/** Coloca uma unidade na fila de treinamento (o custo é cobrado ao enfileirar). */
+export interface TrainCommand {
+  type: 'train';
+  buildingId: EntityId;
+  unitType: string;
+}
+
+/** Remove um item da fila de treinamento, devolvendo o custo. */
+export interface CancelTrainCommand {
+  type: 'cancelTrain';
+  buildingId: EntityId;
+  index: number;
+}
+
+/** Ponto de reunião: unidades treinadas vão até lá (ou coletam, se for um recurso). */
+export interface SetRallyPointCommand {
+  type: 'setRallyPoint';
+  buildingId: EntityId;
+  target: Vec2;
+  targetId?: EntityId;
+}
+
 export type GameCommand =
   | MoveCommand
   | StopCommand
@@ -60,7 +112,14 @@ export type GameCommand =
   | DepositCommand
   | PlaceBuildingCommand
   | ConstructCommand
-  | CancelBuildingCommand;
+  | CancelBuildingCommand
+  | AttackCommand
+  | AttackMoveCommand
+  | SetStanceCommand
+  | RepairCommand
+  | TrainCommand
+  | CancelTrainCommand
+  | SetRallyPointCommand;
 
 /** Comando já associado ao jogador que o emitiu. */
 export interface IssuedCommand {

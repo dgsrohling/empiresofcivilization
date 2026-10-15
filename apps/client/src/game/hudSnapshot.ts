@@ -88,6 +88,16 @@ function unitStatus(world: World, unit: UnitEntity): string {
     const queued = unit.buildQueue.length > 0 ? ` (+${unit.buildQueue.length} na fila)` : '';
     return (task.phase === 'building' ? `Construindo ${name}` : `Indo construir ${name}`) + queued;
   }
+  if (task.type === 'repair') {
+    const site = world.getEntity(task.targetId);
+    const name = site ? getBuildingDefinition(site.type).name : 'edifício';
+    return task.phase === 'repairing' ? `Reparando ${name}` : `Indo reparar ${name}`;
+  }
+  if (task.type === 'attack') {
+    const target = world.getEntity(task.targetId);
+    const name = !target ? 'inimigo' : target.kind === 'building' ? getBuildingDefinition(target.type).name : target.kind === 'unit' ? getUnitDefinition(target.type).name : 'alvo';
+    return unit.state === 'attacking' ? `Atacando ${name}` : `Perseguindo ${name}`;
+  }
   const resource = taskResource(unit);
   const name = resource ? RESOURCE_NAMES[resource] : 'recursos';
   switch (task.phase) {

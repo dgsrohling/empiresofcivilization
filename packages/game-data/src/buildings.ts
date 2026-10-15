@@ -23,6 +23,8 @@ export interface BuildingDefinition {
   dropsiteFor: readonly ResourceType[];
   /** Atalho de teclado no menu de construção. */
   hotkey?: string;
+  /** Unidades treinadas neste edifício, na ordem dos botões. */
+  trains: readonly string[];
 }
 
 export const BUILDING_DEFINITIONS = {
@@ -41,6 +43,7 @@ export const BUILDING_DEFINITIONS = {
     requiresBuildings: [],
     buildable: true,
     dropsiteFor: ['food', 'wood', 'gold', 'stone'],
+    trains: ['villager'],
   },
   house: {
     type: 'house',
@@ -58,6 +61,7 @@ export const BUILDING_DEFINITIONS = {
     buildable: true,
     dropsiteFor: [],
     hotkey: 'C',
+    trains: [],
   },
   lumberCamp: {
     type: 'lumberCamp',
@@ -75,6 +79,7 @@ export const BUILDING_DEFINITIONS = {
     buildable: true,
     dropsiteFor: ['wood'],
     hotkey: 'M',
+    trains: [],
   },
   miningCamp: {
     type: 'miningCamp',
@@ -92,11 +97,12 @@ export const BUILDING_DEFINITIONS = {
     buildable: true,
     dropsiteFor: ['gold', 'stone'],
     hotkey: 'O',
+    trains: [],
   },
   barracks: {
     type: 'barracks',
     name: 'Quartel',
-    description: 'Treina infantaria (treinamento disponível na Fase 4).',
+    description: 'Treina infantaria: espadachins e lanceiros.',
     maxHp: 1200,
     armor: { melee: 0, pierce: 7 },
     footprint: { w: 3, h: 3 },
@@ -109,13 +115,32 @@ export const BUILDING_DEFINITIONS = {
     buildable: true,
     dropsiteFor: [],
     hotkey: 'Q',
+    trains: ['swordsman', 'spearman'],
+  },
+  archeryRange: {
+    type: 'archeryRange',
+    name: 'Campo de Arqueiros',
+    description: 'Treina arqueiros. Requer um Quartel.',
+    maxHp: 1200,
+    armor: { melee: 0, pierce: 7 },
+    footprint: { w: 3, h: 3 },
+    lineOfSight: 5,
+    populationProvided: 0,
+    cost: { wood: 175 },
+    buildTime: 50,
+    requiredAge: 1,
+    requiresBuildings: ['barracks'],
+    buildable: true,
+    dropsiteFor: [],
+    hotkey: 'A',
+    trains: ['archer'],
   },
 } satisfies Record<string, BuildingDefinition>;
 
 export type BuildingType = keyof typeof BUILDING_DEFINITIONS;
 
 /** Ordem de exibição no menu de construção dos aldeões. */
-export const BUILD_MENU: readonly BuildingType[] = ['house', 'lumberCamp', 'miningCamp', 'barracks', 'townCenter'];
+export const BUILD_MENU: readonly BuildingType[] = ['house', 'lumberCamp', 'miningCamp', 'barracks', 'archeryRange', 'townCenter'];
 
 export function getBuildingDefinition(type: string): BuildingDefinition {
   const def = (BUILDING_DEFINITIONS as Record<string, BuildingDefinition>)[type];

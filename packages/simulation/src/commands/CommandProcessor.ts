@@ -1,6 +1,8 @@
-import { getUnitDefinition } from '@eoc/game-data';
+import { COMBAT, getBuildingDefinition, getUnitDefinition } from '@eoc/game-data';
 import { MAX_COMMAND_UNITS, type CommandResult, type EntityId, type GameCommand, type PlayerId } from '@eoc/shared';
-import { checkPlacement } from '../construction/placement';
+import { isCombatTarget } from '../combat/damage';
+import { checkPlacement, missingResourceMessage } from '../construction/placement';
+import { areEnemies } from '../core/players';
 import type { World } from '../core/World';
 import type { UnitEntity } from '../entities/types';
 
@@ -49,6 +51,57 @@ export function validateCommand(world: World, playerId: PlayerId, command: GameC
       if (site.complete) return { ok: false, reason: 'Somente obras não concluídas podem ser canceladas' };
       return { ok: true };
     }
+    case 'attack': {
+      const unitCheck = validateOwnedUnits(world, playerId, command.unitIds, 'fighter');
+      if (!unitCheck.ok) return unitCheck;
+      const target = world.getEntity(command.targetId);
+      if (!isCombatTarget(target)) return { ok: false, reason: 'Alvo inválido' };
+      if (!areEnemies(playerId, target.owner)) return { ok: false, reason: 'O alvo não é inimigo' };
+      return { ok: true };
+    }
+    case 'attackMove': {
+      const unitCheck = validateOwnedUnits(world, playerId, command.unitIds, 'fighter');
+      if (!unitCheck.ok) return unitCheck;
+      if (!Number.isFinite(command.target.x) || !Number.isFinite(command.target.y)) return { ok: false, reason: 'Destino inválido' };
+      return { ok: true };
+    }
+    case 'setStance': {
+      if (!['aggressive', 'defensive', 'holdPosition'].includes(command.stance)) return { ok: false, reason: 'Postura inválida' };
+      return validateOwnedUnits(world, playerId, command.unitIds);
+    }
+    case 'repair': {
+      const unitCheck = validateOwnedUnits(world, playerId, command.unitIds, 'builder');
+      if (!unitCheck.ok) return unitCheck;
+      const site = world.getEntity(command.buildingId);
+      if (!site || site.kind !== 'building' || site.owner !== playerId) return { ok: false, reason: 'Edifício inválido' };
+      if (!site.complete) return { ok: false, reason: 'Obras são construídas, não reparadas' };
+      if (site.hp >= site.maxHp) return { ok: false, reason: 'O edifício não está danificado' };
+      return { ok: true };
+    }
+    case 'train': {
+      const b = world.getEntity(command.buildingId);
+      if (!b || b.kind !== 'building' || b.owner !== playerId) return { ok: false, reason: 'Edifício inválido' };
+      if (!b.complete) return { ok: false, reason: 'O edifício ainda está em construção' };
+      if (!getBuildingDefinition(b.type).trains.includes(command.unitType)) return { ok: false, reason: 'Este edifício não treina essa unidade' };
+      if (b.queue.length >= COMBAT.maxQueue) return { ok: false, reason: 'Fila de treinamento cheia' };
+      const player = world.getPlayer(playerId)!;
+      const missing = missingResourceMessage(player, getUnitDefinition(command.unitType).cost);
+      return missing ? { ok: false, reason: missing } : { ok: true };
+    }
+    case 'cancelTrain': {
+      const b = world.getEntity(command.buildingId);
+      if (!b || b.kind !== 'building' || b.owner !== playerId) return { ok: false, reason: 'Edifício inválido' };
+      if (!Number.isInteger(command.index) || command.index < 0 || command.index >= b.queue.length) return { ok: false, reason: 'Item da fila inválido' };
+      return { ok: true };
+    }
+    case 'setRallyPoint': {
+      const b = world.getEntity(command.buildingId);
+      if (!b || b.kind !== 'building' || b.owner !== playerId) return { ok: false, reason: 'Edifício inválido' };
+      if (getBuildingDefinition(b.type).trains.length === 0) return { ok: false, reason: 'Este edifício não treina unidades' };
+      const { x, y } = command.target;
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= world.width || y >= world.height) return { ok: false, reason: 'Ponto inválido' };
+      return { ok: true };
+    }
     case 'deposit': {
       const unitCheck = validateOwnedUnits(world, playerId, command.unitIds, 'gatherer');
       if (!unitCheck.ok) return unitCheck;
@@ -63,7 +116,7 @@ export function validateCommand(world: World, playerId: PlayerId, command: GameC
   }
 }
 
-function validateOwnedUnits(world: World, playerId: PlayerId, ids: readonly EntityId[], capability?: 'gatherer' | 'builder'): CommandResult {
+function validateOwnedUnits(world: World, playerId: PlayerId, ids: readonly EntityId[], capability?: 'gatherer' | 'builder' | 'fighter'): CommandResult {
   if (!Array.isArray(ids) || ids.length === 0) return { ok: false, reason: 'Nenhuma unidade selecionada' };
   if (ids.length > MAX_COMMAND_UNITS) return { ok: false, reason: 'Unidades demais em um único comando' };
   for (const id of ids) {
@@ -73,6 +126,7 @@ function validateOwnedUnits(world: World, playerId: PlayerId, ids: readonly Enti
     const def = getUnitDefinition(entity.type);
     if (capability === 'gatherer' && !def.gatherer) return { ok: false, reason: 'Apenas aldeões podem coletar recursos' };
     if (capability === 'builder' && !def.builder) return { ok: false, reason: 'Apenas aldeões podem construir' };
+    if (capability === 'fighter' && def.attack <= 0) return { ok: false, reason: 'Esta unidade não pode atacar' };
   }
   return { ok: true };
 }

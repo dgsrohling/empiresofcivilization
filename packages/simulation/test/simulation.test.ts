@@ -71,6 +71,8 @@ describe('Movimento', () => {
     const units = sim.world.units.filter((u) => u.owner === 1);
     const enemyTc = sim.world.buildings.find((b) => b.owner === 2)!;
     const target = { x: enemyTc.tileX - 3, y: enemyTc.tileY - 3 };
+    // Só o pathfinding interessa aqui: remove o rival para que ninguém entre em combate.
+    for (const e of [...sim.world.entities.values()]) if (e.owner === 2) sim.world.removeEntity(e.id);
     expect(sim.issue(1, { type: 'move', unitIds: units.map((u) => u.id), target }).ok).toBe(true);
     runSeconds(sim, 90, () => {
       for (const u of units) expect(sim.world.grid.isWalkableAt(u.x, u.y)).toBe(true);

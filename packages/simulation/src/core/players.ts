@@ -23,7 +23,12 @@ export function createPlayerState(init: PlayerInit): PlayerState {
     population: 0,
     populationCap: 0,
     age: 1,
-    modifiers: { gatherRate: { food: 1, wood: 1, gold: 1, stone: 1 }, carryCapacity: 0, buildSpeed: 1 },
-    stats: { gathered: zero() },
+    modifiers: { gatherRate: { food: 1, wood: 1, gold: 1, stone: 1 }, carryCapacity: 0, buildSpeed: 1, trainSpeed: 1 },
+    stats: { gathered: zero(), unitsTrained: 0, unitsLost: 0, kills: 0, buildingsLost: 0 },
   };
+}
+
+/** Jogadores diferentes são inimigos; a natureza (0) é neutra. Times virão com o multiplayer. */
+export function areEnemies(a: PlayerId, b: PlayerId): boolean {
+  return a !== b && a !== 0 && b !== 0;
 }

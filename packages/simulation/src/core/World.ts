@@ -1,6 +1,6 @@
 import { getBuildingDefinition, getUnitDefinition, RESOURCE_NODE_DEFINITIONS } from '@eoc/game-data';
 import { GAIA_PLAYER_ID, type EntityId, type PlayerId } from '@eoc/shared';
-import type { BuildingEntity, Entity, PlayerState, ResourceEntity, SimEvent, UnitEntity } from '../entities/types';
+import type { BuildingEntity, Entity, PlayerState, Projectile, ResourceEntity, SimEvent, UnitEntity } from '../entities/types';
 import type { GeneratedMap, ResourceNodeSpec } from '../map/types';
 import { NavGrid } from '../pathfinding/NavGrid';
 
@@ -12,6 +12,7 @@ export class World {
   readonly buildings: BuildingEntity[] = [];
   readonly resources: ResourceEntity[] = [];
   readonly players = new Map<PlayerId, PlayerState>();
+  readonly projectiles: Projectile[] = [];
   /** Entidade estática (edifício/recurso) por tile; 0 = livre. */
   readonly staticAt: Int32Array;
   tick = 0;
@@ -20,6 +21,7 @@ export class World {
   /** Incrementado quando entidades estáticas são criadas ou removidas (minimapa, caches). */
   staticRevision = 0;
   private nextId = 1;
+  private nextProjectileId = 1;
   private events: SimEvent[] = [];
 
   constructor(readonly map: GeneratedMap) {
@@ -70,6 +72,14 @@ export class World {
       speed: def.speed,
       state: 'idle',
       task: null,
+      stance: 'aggressive',
+      attackCooldown: 0,
+      scanTimer: 0,
+      guardX: x,
+      guardY: y,
+      attackMoveGoal: null,
+      lastDamagedAt: -Infinity,
+      lastAttackerId: null,
       buildQueue: [],
       carryType: null,
       carryAmount: 0,
@@ -111,6 +121,10 @@ export class World {
       height: h,
       complete,
       buildProgress: complete ? 1 : 0,
+      queue: [],
+      rallyPoint: null,
+      repairDebt: { food: 0, wood: 0, gold: 0, stone: 0 },
+      lastDamagedAt: -Infinity,
     };
     this.entities.set(building.id, building);
     this.buildings.push(building);
@@ -174,6 +188,10 @@ export class World {
       this.release(entity.tileX, entity.tileY, 1, 1);
     }
     this.emit({ type: 'entityRemoved', id, kind: entity.kind });
+  }
+
+  nextProjectile(): number {
+    return this.nextProjectileId++;
   }
 
   emit(event: SimEvent): void {

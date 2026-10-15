@@ -21,3 +21,6 @@ export * from './economy/EconomySystem';
 export * from './construction/placement';
 export * from './construction/ConstructionSystem';
 export * from './orders/approach';
+export * from './combat/damage';
+export * from './combat/CombatSystem';
+export * from './training/TrainingSystem';

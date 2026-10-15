@@ -1,9 +1,9 @@
-import { ECONOMY, RESOURCE_NODE_DEFINITIONS, getBuildingDefinition, type ResourceNodeType } from '@eoc/game-data';
-import { RESOURCE_TYPES, type EntityId, type PlayerId, type ResourceAmounts } from '@eoc/shared';
+import { COMBAT, ECONOMY, RESOURCE_NODE_DEFINITIONS, getBuildingDefinition, type ResourceNodeType } from '@eoc/game-data';
+import { RESOURCE_TYPES, type EntityId, type PlayerId, type ResourceAmounts, type ResourceType } from '@eoc/shared';
 import type { World } from '../core/World';
 import type { EconomySystem } from '../economy/EconomySystem';
 import { findNearestResource, unitComponent } from '../economy/queries';
-import type { BuildTask, BuildingEntity, UnitEntity } from '../entities/types';
+import type { BuildTask, BuildingEntity, RepairTask, UnitEntity } from '../entities/types';
 import type { MovementSystem } from '../movement/MovementSystem';
 import { approachTarget, inReach } from '../orders/approach';
 import { payCost } from './placement';
@@ -20,6 +20,7 @@ const MAX_APPROACH_ATTEMPTS = 3;
  */
 export class ConstructionSystem {
   private readonly builderCount = new Map<EntityId, number>();
+  private readonly repairerCount = new Map<EntityId, number>();
 
   constructor(
     private readonly world: World,
@@ -50,6 +51,13 @@ export class ConstructionSystem {
     if (!approachTarget(this.world, this.movement, unit, building)) this.finishTask(unit, null);
   }
 
+  /** Envia o aldeão para reparar um edifício próprio danificado. */
+  startRepair(unit: UnitEntity, building: BuildingEntity): void {
+    unit.gatherProgress = 0;
+    unit.task = { type: 'repair', phase: 'toSite', targetId: building.id, approachAttempts: 0 };
+    if (!approachTarget(this.world, this.movement, unit, building)) this.economy.release(unit);
+  }
+
   /** Cancela uma obra, devolvendo o custo proporcional ao que falta construir. */
   cancel(building: BuildingEntity): void {
     const player = this.world.getPlayer(building.owner);
@@ -68,12 +76,79 @@ export class ConstructionSystem {
 
   update(dt: number): void {
     this.builderCount.clear();
+    this.repairerCount.clear();
     for (const unit of this.world.units) {
       if (unit.task?.type === 'build') this.updateBuilder(unit, unit.task);
+      else if (unit.task?.type === 'repair') this.updateRepairer(unit, unit.task);
     }
     for (const [id, count] of this.builderCount) {
       const building = this.world.getEntity(id);
       if (building?.kind === 'building' && !building.complete) this.advance(building, count, dt);
+    }
+    for (const [id, count] of this.repairerCount) {
+      const building = this.world.getEntity(id);
+      if (building?.kind === 'building') this.repair(building, count, dt);
+    }
+  }
+
+  private updateRepairer(unit: UnitEntity, task: RepairTask): void {
+    const e = this.world.getEntity(task.targetId);
+    const site = e?.kind === 'building' && e.owner === unit.owner && e.complete && e.hp < e.maxHp ? e : null;
+    if (!site) return this.economy.release(unit);
+    if (task.phase === 'toSite') {
+      const slack = unit.moveStatus === 'arrived' ? ARRIVAL_SLACK : 0;
+      if (!inReach(unit, site, slack)) {
+        if (unit.moveStatus === 'moving') return;
+        task.approachAttempts++;
+        if (task.approachAttempts > MAX_APPROACH_ATTEMPTS || !approachTarget(this.world, this.movement, unit, site)) this.economy.release(unit);
+        return;
+      }
+      this.movement.stopMovement(unit);
+      task.phase = 'repairing';
+    }
+    if (!inReach(unit, site, WORKING_SLACK)) {
+      task.phase = 'toSite';
+      if (!approachTarget(this.world, this.movement, unit, site)) this.economy.release(unit);
+      return;
+    }
+    unit.state = 'building';
+    unit.heading = Math.atan2(site.y - unit.y, site.x - unit.x);
+    this.repairerCount.set(site.id, (this.repairerCount.get(site.id) ?? 0) + 1);
+  }
+
+  /**
+   * Reparo: mesma fórmula de vários construtores, `repairSlowdown` vezes mais lenta. Cobra
+   * `repairCostFactor` do custo do edifício proporcionalmente à vida restaurada; sem recursos, para.
+   */
+  private repair(building: BuildingEntity, workers: number, dt: number): void {
+    const def = getBuildingDefinition(building.type);
+    const player = this.world.getPlayer(building.owner);
+    if (!player) return;
+    const rate = ((workers + 2) / (3 * def.buildTime * COMBAT.repairSlowdown)) * player.modifiers.buildSpeed;
+    const gain = Math.min(building.maxHp - building.hp, building.maxHp * rate * dt);
+    const charge: Partial<Record<ResourceType, number>> = {};
+    for (const r of RESOURCE_TYPES) {
+      const debt = building.repairDebt[r] + (def.cost[r] ?? 0) * COMBAT.repairCostFactor * (gain / building.maxHp);
+      const whole = Math.floor(debt);
+      if (whole > 0 && player.resources[r] < whole) return this.stopRepair(building, 'resources');
+      building.repairDebt[r] = debt;
+      if (whole > 0) charge[r] = whole;
+    }
+    for (const [r, amount] of Object.entries(charge) as Array<[ResourceType, number]>) {
+      player.resources[r] -= amount;
+      building.repairDebt[r] -= amount;
+    }
+    building.hp += gain;
+    if (building.hp >= building.maxHp - 1e-6) {
+      building.hp = building.maxHp;
+      this.stopRepair(building, 'done');
+    }
+  }
+
+  private stopRepair(building: BuildingEntity, reason: 'resources' | 'done'): void {
+    this.world.emit({ type: 'repairStopped', buildingId: building.id, playerId: building.owner, reason });
+    for (const unit of this.world.units) {
+      if (unit.task?.type === 'repair' && unit.task.targetId === building.id) this.economy.release(unit);
     }
   }
 
